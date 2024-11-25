@@ -5,7 +5,6 @@ import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.ProxyServer;
-import com.velocitypowered.api.proxy.server.ServerPing;
 import org.slf4j.Logger;
 
 import java.io.OutputStream;
@@ -29,6 +28,7 @@ public class DeekaVelocity {
             HttpServer httpServer = HttpServer.create(new InetSocketAddress(2923), 0);
             httpServer.createContext("/", new RootHandler());
             httpServer.createContext("/players", new PlayersHandler());
+            httpServer.createContext("/servers/", new ServerHandler());
             httpServer.setExecutor(null);
             httpServer.start();
             logger.info("Web server started on port " + httpServer.getAddress().getPort());
@@ -53,6 +53,37 @@ public class DeekaVelocity {
         }
     }
 
+    private class ServerHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) {
+            try {
+                addCorsHeaders(exchange);
+                String path = exchange.getRequestURI().getPath();
+                if (path.matches("^/servers/[^/]+/players$")) {
+                    String serverName = path.substring(9, path.lastIndexOf('/'));
+                    int online = server.getAllServers().stream()
+                            .filter(s -> s.getServerInfo().getName().equals(serverName))
+                            .findFirst()
+                            .map(s -> s.getPlayersConnected().size())
+                            .orElse(0);
+                    String response = "{\"online\": " + online + "}";
+                    exchange.getResponseHeaders().add("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, response.length());
+                    OutputStream os = exchange.getResponseBody();
+                    os.write(response.getBytes());
+                    os.close();
+                } else {
+                    String response = "Invalid API End Point!";
+                    exchange.sendResponseHeaders(404, response.length());
+                    OutputStream os = exchange.getResponseBody();
+                    os.write(response.getBytes());
+                    os.close();
+                }
+            } catch (Exception e) {
+                logger.error("Error handling server request", e);
+            }
+        }
+    }
     private class PlayersHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) {
@@ -69,7 +100,6 @@ public class DeekaVelocity {
             }
         }
     }
-
     private void addCorsHeaders(HttpExchange exchange) {
         exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, OPTIONS");

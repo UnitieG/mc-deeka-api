@@ -38,6 +38,7 @@ public class DeekaVelocity {
         }
         server.getCommandManager().register("hub", new HubCommand(server));
         server.getCommandManager().register("lobby", new HubCommand(server));
+        server.getEventManager().register(this, new StaffUtilities(server));
     }
 
     private class RootHandler implements HttpHandler {

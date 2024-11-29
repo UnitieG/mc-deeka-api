@@ -1,12 +1,13 @@
 package me.deeka.deekaVelocity;
 
 import com.google.inject.Inject;
-import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import com.sun.net.httpserver.HttpServer;
@@ -35,20 +36,34 @@ public class DeekaVelocity {
         } catch (Exception e) {
             logger.error("Failed to start web server", e);
         }
+        server.getCommandManager().register("hub", new HubCommand(server));
+        server.getCommandManager().register("lobby", new HubCommand(server));
     }
 
     private class RootHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) {
             try {
-                addCorsHeaders(exchange);
+                if (handlePreflight(exchange)) return;
+
                 String response = "Invalid API End Point!";
-                exchange.sendResponseHeaders(200, response.length());
-                OutputStream os = exchange.getResponseBody();
-                os.write(response.getBytes());
-                os.close();
+                sendTextResponse(exchange, 200, response);
             } catch (Exception e) {
                 logger.error("Error handling root request", e);
+            }
+        }
+    }
+
+    private class PlayersHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) {
+            try {
+                if (handlePreflight(exchange)) return;
+
+                String response = "{\"online\": " + server.getPlayerCount() + "}";
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                logger.error("Error handling players request", e);
             }
         }
     }
@@ -57,7 +72,8 @@ public class DeekaVelocity {
         @Override
         public void handle(HttpExchange exchange) {
             try {
-                addCorsHeaders(exchange);
+                if (handlePreflight(exchange)) return;
+
                 String path = exchange.getRequestURI().getPath();
                 if (path.matches("^/servers/[^/]+/players$")) {
                     String serverName = path.substring(9, path.lastIndexOf('/'));
@@ -67,42 +83,47 @@ public class DeekaVelocity {
                             .map(s -> s.getPlayersConnected().size())
                             .orElse(0);
                     String response = "{\"online\": " + online + "}";
-                    exchange.getResponseHeaders().add("Content-Type", "application/json");
-                    exchange.sendResponseHeaders(200, response.length());
-                    OutputStream os = exchange.getResponseBody();
-                    os.write(response.getBytes());
-                    os.close();
+                    sendJsonResponse(exchange, 200, response);
                 } else {
                     String response = "Invalid API End Point!";
-                    exchange.sendResponseHeaders(404, response.length());
-                    OutputStream os = exchange.getResponseBody();
-                    os.write(response.getBytes());
-                    os.close();
+                    sendTextResponse(exchange, 404, response);
                 }
             } catch (Exception e) {
                 logger.error("Error handling server request", e);
             }
         }
     }
-    private class PlayersHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) {
-            try {
-                addCorsHeaders(exchange);
-                String response = "{\"online\": " + server.getPlayerCount() + "}";
-                exchange.getResponseHeaders().add("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, response.length());
-                OutputStream os = exchange.getResponseBody();
-                os.write(response.getBytes());
-                os.close();
-            } catch (Exception e) {
-                logger.error("Error handling players request", e);
-            }
+
+    private boolean handlePreflight(HttpExchange exchange) throws IOException {
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            addCorsHeaders(exchange);
+            exchange.sendResponseHeaders(204, -1); // No Content
+            return true;
         }
+        return false;
     }
+
     private void addCorsHeaders(HttpExchange exchange) {
         exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, OPTIONS");
         exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    }
+
+    private void sendJsonResponse(HttpExchange exchange, int statusCode, String response) throws IOException {
+        addCorsHeaders(exchange);
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(statusCode, response.length());
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(response.getBytes());
+        }
+    }
+
+    private void sendTextResponse(HttpExchange exchange, int statusCode, String response) throws IOException {
+        addCorsHeaders(exchange);
+        exchange.getResponseHeaders().add("Content-Type", "text/plain");
+        exchange.sendResponseHeaders(statusCode, response.length());
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(response.getBytes());
+        }
     }
 }

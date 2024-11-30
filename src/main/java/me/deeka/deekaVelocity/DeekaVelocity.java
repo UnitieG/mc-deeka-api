@@ -5,6 +5,7 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.ProxyServer;
+import me.lucko.spark.api.Spark;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -23,6 +24,10 @@ public class DeekaVelocity {
     @Inject
     private ProxyServer server;
 
+    private Spark spark;
+
+    private DiscordBot discordBot;
+
     @Subscribe
     public void onProxyInitialization(ProxyInitializeEvent event) {
         try {
@@ -33,13 +38,23 @@ public class DeekaVelocity {
             httpServer.setExecutor(null);
             httpServer.start();
             logger.info("Web server started on port " + httpServer.getAddress().getPort());
+
         } catch (Exception e) {
             logger.error("Failed to start web server", e);
         }
         server.getCommandManager().register("hub", new HubCommand(server));
         server.getCommandManager().register("lobby", new HubCommand(server));
+        server.getCommandManager().register("discord", new Discord());
         server.getEventManager().register(this, new StaffUtilities(server));
+
+        try {
+            discordBot = new DiscordBot(logger, spark); // Pass the spark instance
+            discordBot.start();
+        } catch (NoClassDefFoundError e) {
+            logger.error("DiscordBot failed to start: JDA library not found", e);
+        }
     }
+
 
     private class RootHandler implements HttpHandler {
         @Override
